@@ -1,0 +1,514 @@
+---
+title: "Fertility/Mortality/Internet Usage Analysis"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r}
+link='https://github.com/aaront002/PUBPOL_542_Group_Project/raw/master/TEAMdata.RDS'
+# a RDS file from the web needs:
+myFile=url(link)
+
+# reading in data:
+fertmortint=readRDS(file = myFile)
+
+# reset indexes to R format:
+row.names(fertmortint)=NULL
+```
+```{r}
+fertmortint
+
+```
+
+Making a new row for adult mortality rate in %
+```{r}
+fertmortint$MortalityRate1 = fertmortint$MortalityRate/1000
+```
+
+Setting Random Seed
+```{r}
+set.seed(999)
+```
+
+
+
+# Clustering
+```{r}
+library(tidyverse)
+
+fertmortint <- fertmortint%>%
+  distinct(CountryCode, .keep_all=TRUE)
+```
+
+
+
+```{r}
+str(fertmortint[,c(2,6,7)])
+```
+
+
+Subsetting the data frame:
+```{r}
+dfClus = fertmortint[,c(2,6,7)]
+
+row.names(dfClus)=fertmortint$Country
+head(dfClus)
+```
+
+
+Decide distance method and compute distance matrix:
+```{r}
+library(cluster)
+dfClus_D=cluster::daisy(x=dfClus)
+```
+
+
+```{r}
+NumCluster = 4
+res.pam = pam(x=dfClus_D, k = NumCluster, cluster.only = F)
+
+fertmortint$pam = as.factor(res.pam$clustering)
+```
+
+```{r}
+fertmortint[fertmortint$pam==1, 'Country']
+```
+
+Report Table of clusters:
+```{r}
+table(fertmortint$pam)
+```
+
+
+Report Average Silhouettes:
+```{r}
+library(factoextra)
+
+fviz_silhouette(res.pam)
+```
+
+Save individual silhouettes:
+```{r}
+pamEval= data.frame(res.pam$silinfo$widths)
+head(pamEval)
+```
+
+
+Request Negative Silhouettes:
+```{r}
+pamEval[pamEval$sil_width<0,]
+```
+
+### Agglomerative(Agnes)
+```{r}
+res.agnes= hcut(dfClus_D, k = NumCluster, isdiss=T,
+                hc_func = 'agnes',
+                hc_method = "ward.D2")
+fertmortint$agn=as.factor(res.agnes$cluster)
+fertmortint[fertmortint$agn ==1, 'Country']
+
+table(fertmortint$agn)
+```
+
+Dendogram:
+```{r}
+fviz_dend(res.agnes, k=NumCluster, cex = 0.7, horiz = T)
+```
+
+Average Silhouettes:
+```{r}
+fviz_silhouette(res.agnes)
+```
+
+Saving silhouettes:
+```{r}
+agnEval = data.frame(res.agnes$silinfo$widths)
+head(agnEval)
+```
+
+
+Requesting negative silhouettes:
+```{r}
+agnEval[agnEval$sil_width<0,]
+```
+
+
+
+### Divisive (Diana)
+```{r}
+res.diana= hcut(dfClus_D, k = NumCluster,
+                hc_func='diana',
+                hc_method = "ward.D")
+
+fertmortint$dia=as.factor(res.diana$cluster)
+
+fertmortint[fertmortint$dia==1, 'Country']
+
+table(fertmortint$dia)
+                
+```
+
+Dendogram:
+```{r}
+fviz_dend(res.diana,k=NumCluster, cex = 0.7, horiz =T)
+```
+
+
+Average Silhouettes:
+```{r}
+fviz_silhouette(res.diana)
+
+```
+
+
+Detecting Anomalies:
+```{r}
+diaEval = data.frame(res.diana$silinfo$widths)
+head(diaEval)
+
+diaEval[diaEval$sil_width<0,]
+```
+
+TESTING 3 Clusters:
+```{r}
+
+#res.diana= hcut(dfClus_D, k = 3,
+                #hc_func='diana',
+                #hc_method = "ward.D")
+
+#fertmortint$dia=as.factor(res.diana$cluster)
+
+#fertmortint[fertmortint$dia==1, 'Country']
+
+#fviz_dend(res.diana,k=3, cex = 0.7, horiz =T)
+
+#fviz_silhouette(res.diana)
+```
+
+TESTING 5 Clusters:
+```{r}
+
+#res.diana= hcut(dfClus_D, k = 5,
+                #hc_func='diana',
+                #hc_method = "ward.D")
+
+#fertmortint$dia=as.factor(res.diana$cluster)
+
+#fertmortint[fertmortint$dia==1, 'Country']
+
+#fviz_dend(res.diana,k=5, cex = 0.7, horiz =T)
+
+#fviz_silhouette(res.diana)
+
+```
+
+
+### Density Based Clustering
+```{r}
+library(dbscan)
+minNeighs = 4
+kNNdistplot(dfClus_D, k = minNeighs)
+abline(h=.03, col = "red", lty=2)
+
+distance = 1.5
+res.db=dbscan::dbscan(dfClus_D, eps=distance, minPts=minNeighs)
+
+res.db
+fertmortint$db=as.factor(res.db$cluster)
+```
+
+## Comparing Clustering
+```{r}
+projectedData = cmdscale(dfClus_D, k=2)
+
+#saving coordinates to original data frame:
+fertmortint$dim1 = projectedData[,1]
+fertmortint$dim2 = projectedData[,2]
+```
+Viewing the Map:
+```{r}
+base = ggplot(data=fertmortint,
+              aes(x=dim1, y=dim2,
+                  label=Country))
+base + geom_text(size = 2)
+```
+
+Plot results from PAM:
+```{r}
+pamPlot = base+labs(title = "PAM") + geom_point(size=2,
+                                                aes(color=pam),
+                                                show.legend =F)
+```
+
+Plot results from AGNES:
+```{r}
+agnPlot = base+labs(title = "AGNES") + geom_point(size=2,
+                                                aes(color=agn),
+                                                show.legend =F)
+```
+
+
+Plot results from DIANA:
+```{r}
+diaPlot = base+labs(title = "DIANA") + geom_point(size=2,
+                                                aes(color=dia),
+                                                show.legend =F)
+```
+
+Ploting results from DBSCAN:
+```{r}
+dbPlot = base + labs(title = "DBSCAN") + geom_point(size =2,
+                                                    aes(color=db),
+                                                    show.legend = F)
+```
+
+
+Visual Comparison:
+```{r}
+library(ggpubr)
+
+ggarrange(pamPlot, agnPlot, diaPlot, dbPlot,ncol = 4)
+```
+Ploting results from DBSCAN:
+```{r}
+dbPlot = base + labs(title = "DBSCAN") + geom_point(aes(color=db), show.legend = T)
+
+dbPlot
+```
+
+Checking the mean values of the clusters:
+```{r}
+
+aggregate(data=fertmortint,MortalityRate1 ~ db,FUN=mean)
+
+aggregate(data=fertmortint,FertilityRate ~ db,FUN=mean)
+
+aggregate(data=fertmortint,X.InternetUsage ~ db,FUN=mean)
+
+```
+
+# Regression Analysis
+```{r}
+fertmortint$MortalityRate2 = fertmortint$MortalityRate1*fertmortint$MortalityRate1
+```
+
+Hypotheses:
+```{r}
+hypo1=formula(FertilityRate~ MortalityRate1 + X.InternetUsage)
+hypo2=formula(FertilityRate~ MortalityRate1 + X.InternetUsage + ContinentCode)
+hypo3=formula(FertilityRate~ MortalityRate1 + MortalityRate2 + X.InternetUsage)
+hypo4=formula(FertilityRate~ MortalityRate1 + MortalityRate2 + X.InternetUsage + ContinentCode)
+```
+Checking the variables in the hypotheses:
+```{r}
+str(fertmortint)
+```
+Create regression models:
+```{r}
+reg1=glm(hypo1,data = fertmortint)
+reg2=glm(hypo2,data = fertmortint)
+reg3=glm(hypo3,data = fertmortint)
+reg4=glm(hypo4,data = fertmortint)
+```
+Summary of results:
+```{r}
+summary(reg1)
+```
+```{r}
+summary(reg2)
+```
+```{r}
+summary(reg3)
+```
+
+```{r}
+summary(reg4)
+```
+
+Comparing the four models:
+```{r}
+anova(reg1,reg2,reg3,reg4,test="Chisq")
+```
+
+```{r}
+library(rsq)
+```
+Compare the R-squared values of the models:
+```{r}
+rsq(reg1,adj=T)
+```
+
+```{r}
+rsq(reg2,adj=T)
+```
+
+```{r}
+rsq(reg3,adj=T)
+```
+
+
+```{r}
+rsq(reg4,adj=T)
+```
+
+## Checking the assumptions of Hypothesis 2
+Linearity between dependent variable and predictors should follow a linear, horizontal trend:
+```{r}
+plot(reg2,1)
+```
+Normality of residuals is assumed:
+```{r}
+plot(reg2,2)
+```
+Mathematical check of normality:
+```{r}
+shapiro.test(reg2$residuals)
+```
+Checking homoskedasticity assumption:
+```{r}
+plot(reg2, 3)
+```
+
+```{r}
+library(lmtest)
+```
+Mathematical exploration of homoskedascity:
+```{r}
+bptest(reg2)
+```
+
+```{r}
+library(car)
+```
+We assume that the predictors are not correlated:
+```{r}
+#lower than 5 is desirable
+vif(reg2)
+```
+Analyze the effect of atypical values. Determine if outliers (points that are far from the rest, but still in the trend) or high-leverage points (far from the trend but close to the rest) are influential.
+Visual exploration:
+```{r}
+plot(reg2,5)
+```
+Querying:
+```{r}
+regInf=as.data.frame(influence.measures(reg2)$is.inf)
+regInf[regInf$cook.d,]
+```
+Summary plot of work:
+```{r}
+library(sjPlot)
+```
+```{r}
+plot_models(reg2,vline.color = "grey")
+```
+
+## Predictive Approach with Hypothesis 2
+Split the data set:
+```{r}
+library(caret)
+```
+```{r}
+newdata <- na.omit(fertmortint)
+```
+
+```{r}
+set.seed(123)
+
+selection = createDataPartition(newdata$FertilityRate,
+                                p = 0.75,
+                                list = FALSE
+                                )
+
+trainReg = newdata[ selection, ]
+
+testReg  = newdata[-selection, ]
+```
+Regress with train data:
+Use cross validation, applying the regression to five samples from the training data set:
+```{r}
+ctrl = trainControl(method = 'cv',number = 5)
+
+reg2CV = train(hypo2,
+                 data = trainReg, 
+                 method = 'glm',
+                 trControl = ctrl)
+
+summary(reg2CV)
+```
+Evaluate Performance:
+```{r}
+predictedVal<-predict(reg2CV,testReg)
+
+postResample(obs = testReg$FertilityRate, pred=predictedVal)
+```
+
+## Checking the assumptions of Hypothesis 4
+Linearity between dependent variable and predictors should follow a linear, horizontal trend:
+```{r}
+plot(reg4,1)
+```
+
+Normality of residuals is assumed:
+```{r}
+plot(reg4,2)
+```
+
+Mathematical check of normality:
+```{r}
+shapiro.test(reg4$residuals)
+```
+
+Checking homoskedasticity assumption:
+```{r}
+plot(reg4, 3)
+```
+
+Mathematical exploration of homoskedascity:
+```{r}
+bptest(reg4)
+```
+
+We assume that the predictors are not correlated:
+```{r}
+#lower than 5 is desirable
+vif(reg4)
+```
+
+Analyze the effect of atypical values. Determine if outliers (points that are far from the rest, but still in the trend) or high-leverage points (far from the trend but close to the rest) are influential.
+Visual exploration:
+```{r}
+plot(reg4,5)
+```
+
+Querying:
+```{r}
+regInf2=as.data.frame(influence.measures(reg4)$is.inf)
+regInf2[regInf2$cook.d,]
+```
+
+```{r}
+plot_models(reg4,vline.color = "grey")
+```
+
+## Predictive Approach with Hypothesis 4
+Regress with train data:
+Use cross validation, applying the regression to five samples from the training data set:
+```{r}
+ctrl = trainControl(method = 'cv',number = 5)
+
+reg4CV = train(hypo4,
+                 data = trainReg, 
+                 method = 'glm',
+                 trControl = ctrl)
+
+summary(reg4CV)
+```
+
+Evaluate Performance:
+```{r}
+predictedVal<-predict(reg4CV,testReg)
+
+postResample(obs = testReg$FertilityRate, pred=predictedVal)
+```
